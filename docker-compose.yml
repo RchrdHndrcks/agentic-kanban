@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      MUELLE_HEALTH: /api/health
+    volumes:
+      - kanban_data:/data
+    restart: unless-stopped
+
+volumes:
+  kanban_data:

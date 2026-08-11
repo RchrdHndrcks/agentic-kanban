@@ -1,0 +1,381 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from './api';
+import { BoardSkeleton, BoardView } from './components/Board';
+import { ConfirmDialog, NewBoardModal } from './components/Modals';
+import { TaskModal, type TaskModalState } from './components/TaskModal';
+import { useToast } from './components/Toasts';
+import type { Board, BoardFull, ColumnWithTasks, Task } from './types';
+
+function Logo() {
+  return (
+    <span className="flex items-center gap-2.5">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden>
+        <rect width="32" height="32" rx="7" fill="#1d1d1a" />
+        <rect x="7" y="7" width="5" height="18" rx="1.5" fill="#f4f4ee" />
+        <rect x="13.5" y="7" width="5" height="12" rx="1.5" fill="#e0450e" />
+        <rect x="20" y="7" width="5" height="15" rx="1.5" fill="#f4f4ee" opacity="0.55" />
+      </svg>
+      <span className="font-display text-lg font-bold tracking-tight">Agentic Kanban</span>
+    </span>
+  );
+}
+
+export default function App() {
+  const toast = useToast();
+  const [boards, setBoards] = useState<Board[] | null>(null);
+  const [selected, setSelected] = useState(() => localStorage.getItem('kanban.board') ?? '');
+  const [board, setBoard] = useState<BoardFull | null>(null);
+  const [loadingBoard, setLoadingBoard] = useState(false);
+  const [fatalError, setFatalError] = useState('');
+  const [healthy, setHealthy] = useState<boolean | null>(null);
+  const [search, setSearch] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [taskModal, setTaskModal] = useState<TaskModalState | null>(null);
+  const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
+  const loadBoard = useCallback(
+    async (idOrKey: string, { soft = false } = {}) => {
+      if (!soft) setLoadingBoard(true);
+      try {
+        setBoard(await api.getBoard(idOrKey));
+        setFatalError('');
+      } catch (err) {
+        if (!soft) {
+          setBoard(null);
+          setFatalError(err instanceof Error ? err.message : 'Could not load the board.');
+        }
+      } finally {
+        if (!soft) setLoadingBoard(false);
+      }
+    },
+    [],
+  );
+
+  const loadBoards = useCallback(async () => {
+    try {
+      const list = await api.listBoards();
+      setBoards(list);
+      setFatalError('');
+      const stillThere = list.some((b) => b.id === selected || b.key === selected);
+      const next = stillThere ? selected : (list[0]?.id ?? '');
+      setSelected(next);
+      localStorage.setItem('kanban.board', next);
+      if (next) {
+        await loadBoard(next);
+      } else {
+        setBoard(null);
+      }
+    } catch (err) {
+      setFatalError(err instanceof Error ? err.message : 'Could not reach the server.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadBoard]);
+
+  useEffect(() => {
+    loadBoards();
+    api
+      .health()
+      .then(() => setHealthy(true))
+      .catch(() => setHealthy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectBoard = (id: string) => {
+    setSelected(id);
+    localStorage.setItem('kanban.board', id);
+    setAssigneeFilter('');
+    loadBoard(id);
+  };
+
+  const refreshBoard = useCallback(() => {
+    if (selected) loadBoard(selected, { soft: true });
+  }, [selected, loadBoard]);
+
+  const moveTask = useCallback(
+    (taskId: string, columnId: string, position: number) => {
+      setBoard((current) => {
+        if (!current) return current;
+        const columns = current.columns.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== taskId) }));
+        const all = current.columns.flatMap((c) => c.tasks);
+        const task = all.find((t) => t.id === taskId);
+        if (!task) return current;
+        const moved = { ...task, column_id: columnId, position };
+        const target = columns.find((c) => c.id === columnId);
+        if (!target) return current;
+        const idx = target.tasks.findIndex((t) => t.position > position);
+        target.tasks.splice(idx === -1 ? target.tasks.length : idx, 0, moved);
+        return { ...current, columns };
+      });
+      api.updateTask(taskId, { column_id: columnId, position }).catch((err) => {
+        toast(err instanceof Error ? err.message : 'Could not move the task.', 'error');
+        refreshBoard();
+      });
+    },
+    [toast, refreshBoard],
+  );
+
+  const visibleBoard = useMemo<BoardFull | null>(() => {
+    if (!board) return null;
+    const q = search.trim().toLowerCase();
+    if (!q && !assigneeFilter) return board;
+    const match = (task: Task) => {
+      const textOk =
+        !q ||
+        [task.title, task.key, task.assignee, task.labels.join(' ')]
+          .join(' ')
+          .toLowerCase()
+          .includes(q);
+      const assigneeOk = !assigneeFilter || task.assignee === assigneeFilter;
+      return textOk && assigneeOk;
+    };
+    return {
+      ...board,
+      columns: board.columns.map((c) => ({ ...c, tasks: c.tasks.filter(match) })),
+    };
+  }, [board, search, assigneeFilter]);
+
+  const assignees = useMemo(() => {
+    if (!board) return [];
+    const set = new Set<string>();
+    board.columns.forEach((c) => c.tasks.forEach((t) => t.assignee && set.add(t.assignee)));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [board]);
+
+  const currentBoardMeta = boards?.find((b) => b.id === selected);
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-paper/85 px-6 py-3 backdrop-blur">
+        <Logo />
+        <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
+        {boards && boards.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="board-switcher" className="sr-only">
+              Board
+            </label>
+            <select
+              id="board-switcher"
+              className="cursor-pointer rounded-lg border border-transparent bg-transparent px-2 py-1.5 font-display text-sm font-semibold transition-colors hover:border-line focus:border-line"
+              value={selected}
+              onChange={(e) => selectBoard(e.target.value)}
+            >
+              {boards.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            {currentBoardMeta && (
+              <span className="chip">{currentBoardMeta.key}</span>
+            )}
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <svg
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-soft"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="search"
+              aria-label="Search tasks"
+              className="input w-44 pl-8 sm:w-56"
+              placeholder="Search tasks…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {assignees.length > 0 && (
+            <select
+              aria-label="Filter by assignee"
+              className="input w-auto cursor-pointer"
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+            >
+              <option value="">Everyone</option>
+              {assignees.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => setNewBoardOpen(true)}
+            title="New board"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Board
+          </button>
+          {currentBoardMeta && (
+            <button
+              type="button"
+              className="btn-ghost text-ink-soft hover:text-red-600"
+              title="Delete this board"
+              onClick={() =>
+                setConfirm({
+                  title: `Delete “${currentBoardMeta.name}”?`,
+                  body: 'The board and all of its columns, tasks and comments will be permanently deleted. This cannot be undone.',
+                  confirmLabel: 'Delete board',
+                  action: async () => {
+                    await api.deleteBoard(currentBoardMeta.id);
+                    toast('Board deleted');
+                    setSelected('');
+                    await loadBoards();
+                  },
+                })
+              }
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              </svg>
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!visibleBoard || visibleBoard.columns.length === 0}
+            onClick={() => {
+              const first = visibleBoard?.columns[0];
+              if (first) setTaskModal({ kind: 'create', columnId: first.id });
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New task
+          </button>
+        </div>
+      </header>
+
+      <main className="min-h-0 flex-1">
+        {fatalError && !board ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-sm rounded-2xl border border-line bg-white p-8 text-center">
+              <span className="mx-auto mb-4 block h-2.5 w-2.5 rounded-full bg-red-500" />
+              <h1 className="font-display text-lg font-semibold">Something went wrong</h1>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">{fatalError}</p>
+              <button type="button" className="btn-primary mt-5" onClick={loadBoards}>
+                Try again
+              </button>
+            </div>
+          </div>
+        ) : boards && boards.length === 0 ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-sm rounded-2xl border border-line bg-white p-8 text-center">
+              <div className="mx-auto mb-4 w-fit"><Logo /></div>
+              <h1 className="font-display text-lg font-semibold">Create your first board</h1>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                Plan work in columns, assign tasks to people or agents, and let your MCP-connected
+                agents pick them up.
+              </p>
+              <button type="button" className="btn-primary mt-5" onClick={() => setNewBoardOpen(true)}>
+                New board
+              </button>
+            </div>
+          </div>
+        ) : loadingBoard || !visibleBoard ? (
+          <BoardSkeleton />
+        ) : (
+          <BoardView
+            board={visibleBoard}
+            onOpenTask={(task) => setTaskModal({ kind: 'edit', task })}
+            onAddTask={(columnId) => setTaskModal({ kind: 'create', columnId })}
+            onMoveTask={moveTask}
+            onAddColumn={async (name) => {
+              try {
+                await api.createColumn(selected, name);
+                toast(`Added column “${name}”`);
+                refreshBoard();
+              } catch (err) {
+                toast(err instanceof Error ? err.message : 'Could not add the column.', 'error');
+              }
+            }}
+            onDeleteColumn={(column: ColumnWithTasks) =>
+              setConfirm({
+                title: `Delete column “${column.name}”?`,
+                body:
+                  column.tasks.length > 0
+                    ? `This column has ${column.tasks.length} task${column.tasks.length === 1 ? '' : 's'}, which will be permanently deleted. This cannot be undone.`
+                    : 'The column will be permanently deleted. This cannot be undone.',
+                confirmLabel: 'Delete column',
+                action: async () => {
+                  await api.deleteColumn(column.id);
+                  toast('Column deleted');
+                  refreshBoard();
+                },
+              })
+            }
+          />
+        )}
+      </main>
+
+      <footer className="flex items-center gap-3 border-t border-line px-6 py-2 font-mono text-[11px] text-ink-soft">
+        <span
+          className={
+            healthy === null
+              ? 'h-1.5 w-1.5 rounded-full bg-ink-soft/40'
+              : healthy
+                ? 'h-1.5 w-1.5 rounded-full bg-emerald-500'
+                : 'h-1.5 w-1.5 rounded-full bg-red-500'
+          }
+          title={healthy ? 'API reachable' : 'API unreachable'}
+        />
+        <span>{healthy ? 'API online · MCP ready' : 'API offline'}</span>
+        <span className="flex-1" />
+        <span>MIT · Agentic Kanban v0.1</span>
+      </footer>
+
+      {taskModal && visibleBoard && (
+        <TaskModal
+          state={taskModal}
+          boardId={selected}
+          columns={board?.columns ?? []}
+          onClose={() => setTaskModal(null)}
+          onChanged={refreshBoard}
+        />
+      )}
+      {newBoardOpen && (
+        <NewBoardModal
+          onClose={() => setNewBoardOpen(false)}
+          onCreate={async (input) => {
+            const created = await api.createBoard(input);
+            toast(`Created board “${created.name}”`);
+            await loadBoards();
+            selectBoard(created.id);
+          }}
+        />
+      )}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          onConfirm={confirm.action}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+    </div>
+  );
+}
