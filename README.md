@@ -54,6 +54,17 @@ Configuration via environment variables:
 | `PORT`            | `3001`                         | HTTP port for API + web          |
 | `KANBAN_DB`       | `server/data/kanban.db`        | SQLite database file             |
 | `KANBAN_WEB_DIST` | `web/dist`                     | Built web app to serve           |
+| `KANBAN_AUTH_TOKEN` | *(disabled)*                 | Access token protecting the API and web app |
+
+### Access control
+
+Set `KANBAN_AUTH_TOKEN` and every `/api` endpoint (except `/api/health` and `/api/auth/login`)
+requires `Authorization: Bearer <token>`. The web app then shows a sign-in screen and remembers
+the token in `localStorage`. Without the variable the server runs open, as before.
+
+```bash
+KANBAN_AUTH_TOKEN="$(openssl rand -hex 24)" npm start
+```
 
 ## Connect your agents (MCP)
 
@@ -94,6 +105,7 @@ Build once (`npm run build`), then point any MCP client at `mcp/dist/index.js`.
 | ----------------- | ----------------------------- | -------------------------------------- |
 | `KANBAN_API_URL`  | `http://localhost:3001/api`   | Base URL of the Kanban API             |
 | `KANBAN_AUTHOR`   | `agent`                       | Default author for agent comments      |
+| `KANBAN_AUTH_TOKEN` | *(none)*                    | Access token; must match the server's  |
 
 ### MCP tools
 
@@ -136,6 +148,8 @@ GET    /api/tasks/:idOrKey/comments    POST /api/tasks/:idOrKey/comments
 ```
 
 Boards, tasks and columns can all be referenced by id **or** human key (`MB`, `MB-3`, `"In progress"`). Errors are JSON: `{ "error": "Task not found" }` with proper status codes.
+
+When `KANBAN_AUTH_TOKEN` is set, all endpoints below require `Authorization: Bearer <token>` and `POST /api/auth/login` accepts `{ "token": "<token>" }` to validate it.
 
 ## Project structure
 

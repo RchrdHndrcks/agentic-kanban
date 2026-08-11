@@ -1,17 +1,47 @@
 import type { Board, BoardFull, Comment, Priority, Task } from './types';
 
 const BASE = '/api';
+const TOKEN_KEY = 'kanban.token';
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function onUnauthorized(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  token: string | null = getToken(),
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
-      headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+      headers: {
+        ...(body !== undefined ? { 'content-type': 'application/json' } : undefined),
+        ...(token ? { authorization: `Bearer ${token}` } : undefined),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
     throw new Error('Could not reach the server. Check that the API is running and try again.');
+  }
+  if (res.status === 401) {
+    unauthorizedHandler?.();
   }
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => undefined)) as ({ error?: string } & T) | undefined;
@@ -31,6 +61,11 @@ export interface TaskInput {
 
 export const api = {
   health: () => request<{ ok: boolean; version: string }>('GET', '/health'),
+  login: async (token: string) => {
+    const result = await request<{ ok: boolean }>('POST', '/auth/login', { token }, token);
+    setToken(token);
+    return result;
+  },
   listBoards: () => request<Board[]>('GET', '/boards'),
   getBoard: (idOrKey: string) => request<BoardFull>('GET', `/boards/${encodeURIComponent(idOrKey)}`),
   createBoard: (input: { name: string; key?: string; description?: string }) =>

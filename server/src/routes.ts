@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { authEnabled, tokenMatches } from './auth.js';
 import {
   boardByIdOrKey,
   columnById,
@@ -68,7 +69,20 @@ function taskWithCount(id: string) {
 export const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, version: '0.1.1' });
+  res.json({ ok: true, version: '0.2.0' });
+});
+
+// -------------------------------------------------------------- auth ---
+
+const loginSchema = z.object({
+  token: z.string().trim().min(1).max(500),
+});
+
+router.post('/auth/login', (req, res) => {
+  if (!authEnabled) throw notFound('Authentication');
+  const { token } = parse(loginSchema, req.body);
+  if (!tokenMatches(token)) throw new HttpError(401, 'Invalid access token');
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- boards ---

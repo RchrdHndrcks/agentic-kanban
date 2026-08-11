@@ -1,6 +1,6 @@
 {
   "name": "@agentic-kanban/mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server that lets AI agents read and manage Agentic Kanban boards",
   "license": "MIT",
   "type": "module",
