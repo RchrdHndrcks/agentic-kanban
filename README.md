@@ -54,17 +54,17 @@ Configuration via environment variables:
 | `PORT`            | `3001`                         | HTTP port for API + web          |
 | `KANBAN_DB`       | `server/data/kanban.db`        | SQLite database file             |
 | `KANBAN_WEB_DIST` | `web/dist`                     | Built web app to serve           |
-| `KANBAN_AUTH_TOKEN` | *(disabled)*                 | Access token protecting the API and web app |
 
-### Access control
+### Accounts and access control
 
-Set `KANBAN_AUTH_TOKEN` and every `/api` endpoint (except `/api/health` and `/api/auth/login`)
-requires `Authorization: Bearer <token>`. The web app then shows a sign-in screen and remembers
-the token in `localStorage`. Without the variable the server runs open, as before.
+Everyone needs an account: sign up from the sign-in screen, and your boards, tasks and API
+tokens are private to you. Board keys are still unique server-wide. Session tokens last 30 days.
 
-```bash
-KANBAN_AUTH_TOKEN="$(openssl rand -hex 24)" npm start
-```
+API access uses bearer tokens:
+
+- **Web app**: logged-in sessions via `POST /api/auth/login` and `/api/auth/register`
+- **Agents (MCP)**: long-lived API tokens you create in the UI under *API tokens*, sent as
+  `Authorization: Bearer kt_…`
 
 ## Connect your agents (MCP)
 
@@ -105,7 +105,7 @@ Build once (`npm run build`), then point any MCP client at `mcp/dist/index.js`.
 | ----------------- | ----------------------------- | -------------------------------------- |
 | `KANBAN_API_URL`  | `http://localhost:3001/api`   | Base URL of the Kanban API             |
 | `KANBAN_AUTHOR`   | `agent`                       | Default author for agent comments      |
-| `KANBAN_AUTH_TOKEN` | *(none)*                    | Access token; must match the server's  |
+| `KANBAN_AUTH_TOKEN` | *(none)*                    | Your API token (create it in the web app under *API tokens*) |
 
 ### MCP tools
 
@@ -138,18 +138,26 @@ Everything the MCP server can do, the API does directly. Base URL: `/api`.
 
 ```
 GET    /api/health
-GET    /api/boards                     POST /api/boards
-GET    /api/boards/:id                 PATCH|DELETE /api/boards/:id
-POST   /api/boards/:id/columns         PATCH|DELETE /api/columns/:id
+POST   /api/auth/register           { "email", "password" } → session
+POST   /api/auth/login              { "email", "password" } → session
+POST   /api/auth/logout             revokes the current session
+GET    /api/auth/me
+GET    /api/tokens                  POST /api/tokens { "name" } → kt_… shown once
+POST   /api/tokens/:id/revoke
+GET    /api/boards                  POST /api/boards
+GET    /api/boards/:id              PATCH|DELETE /api/boards/:id
+POST   /api/boards/:id/columns      PATCH|DELETE /api/columns/:id
 GET    /api/tasks?board=&column=&assignee=&label=&q=
-POST   /api/tasks                      GET|PATCH|DELETE /api/tasks/:idOrKey
-POST   /api/tasks/:idOrKey/move        { "column": "Done", "position?": 1234 }
-GET    /api/tasks/:idOrKey/comments    POST /api/tasks/:idOrKey/comments
+POST   /api/tasks                   GET|PATCH|DELETE /api/tasks/:idOrKey
+POST   /api/tasks/:idOrKey/move     { "column": "Done", "position?": 1234 }
+GET    /api/tasks/:idOrKey/comments POST /api/tasks/:idOrKey/comments
 ```
 
-Boards, tasks and columns can all be referenced by id **or** human key (`MB`, `MB-3`, `"In progress"`). Errors are JSON: `{ "error": "Task not found" }` with proper status codes.
+Except for `/api/health`, `/api/auth/register` and `/api/auth/login`, every endpoint requires
+`Authorization: Bearer <token>` — a session token for the web app or a `kt_…` API token for agents.
+All data is scoped to the authenticated account.
 
-When `KANBAN_AUTH_TOKEN` is set, all endpoints below require `Authorization: Bearer <token>` and `POST /api/auth/login` accepts `{ "token": "<token>" }` to validate it.
+Boards, tasks and columns can all be referenced by id **or** human key (`MB`, `MB-3`, `"In progress"`). Errors are JSON: `{ "error": "Task not found" }` with proper status codes.
 
 ## Project structure
 

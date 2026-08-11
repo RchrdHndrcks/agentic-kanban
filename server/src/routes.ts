@@ -1,8 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authEnabled, tokenMatches } from './auth.js';
+import {
+  checkCredentials,
+  createApiToken,
+  createSession,
+  createUser,
+  currentUser,
+  deleteSession,
+  listApiTokens,
+  revokeApiToken,
+  userByEmail,
+  userById,
+  type ApiTokenRow,
+} from './auth.js';
 import {
   boardByIdOrKey,
+  claimOrphanBoards,
   columnById,
   columnByIdOrName,
   createBoardWithDefaults,
@@ -43,14 +56,14 @@ function parse<T>(schema: z.ZodType<T>, data: unknown): T {
 const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 const labelsSchema = z.array(z.string().trim().min(1).max(24)).max(12);
 
-function requireBoard(idOrKey: string): BoardRow {
-  const board = boardByIdOrKey(idOrKey);
+function requireBoard(idOrKey: string, userId: string): BoardRow {
+  const board = boardByIdOrKey(idOrKey, userId);
   if (!board) throw notFound('Board');
   return board;
 }
 
-function requireTask(idOrKey: string): TaskRow {
-  const task = taskByIdOrKey(idOrKey);
+function requireTask(idOrKey: string, userId: string): TaskRow {
+  const task = taskByIdOrKey(idOrKey, userId);
   if (!task) throw notFound('Task');
   return task;
 }
@@ -66,35 +79,89 @@ function taskWithCount(id: string) {
   return mapTask(row);
 }
 
+function publicBoard(row: BoardRow) {
+  const { next_task_number, user_id, ...rest } = row;
+  return rest;
+}
+
 export const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, version: '0.2.0' });
+  res.json({ ok: true, version: '0.3.0' });
 });
 
-// -------------------------------------------------------------- auth ---
+// ------------------------------------------------------------------ auth ---
 
-const loginSchema = z.object({
-  token: z.string().trim().min(1).max(500),
+const credentialsSchema = z.object({
+  email: z.string().trim().email().max(120),
+  password: z.string().min(8).max(200),
+});
+
+router.post('/auth/register', (req, res) => {
+  const input = parse(credentialsSchema, req.body);
+  if (userByEmail(input.email)) {
+    throw new HttpError(409, 'An account with that email already exists');
+  }
+  const user = createUser(input.email.toLowerCase(), input.password);
+  claimOrphanBoards(user.id);
+  res.status(201).json({ user: { id: user.id, email: user.email }, token: createSession(user.id) });
 });
 
 router.post('/auth/login', (req, res) => {
-  if (!authEnabled) throw notFound('Authentication');
-  const { token } = parse(loginSchema, req.body);
-  if (!tokenMatches(token)) throw new HttpError(401, 'Invalid access token');
-  res.json({ ok: true });
+  const input = parse(credentialsSchema, req.body);
+  const user = checkCredentials(input.email, input.password);
+  if (!user) throw new HttpError(401, 'Invalid email or password');
+  res.json({ user: { id: user.id, email: user.email }, token: createSession(user.id) });
+});
+
+router.post('/auth/logout', (req, res) => {
+  const header = req.headers.authorization ?? '';
+  const [scheme, token] = header.split(' ');
+  if (scheme?.toLowerCase() === 'bearer' && token) deleteSession(token);
+  res.status(204).end();
+});
+
+router.get('/auth/me', (req, res) => {
+  res.json({ user: { id: currentUser(req), email: userById(currentUser(req))?.email } });
+});
+
+// -------------------------------------------------------------- API tokens ---
+
+router.get('/tokens', (req, res) => {
+  const userId = currentUser(req);
+  res.json(listApiTokens(userId));
+});
+
+const createTokenSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+});
+
+router.post('/tokens', (req, res) => {
+  const input = parse(createTokenSchema, req.body);
+  const userId = currentUser(req);
+  const raw = createApiToken(userId, input.name);
+  const row = db
+    .prepare('SELECT id, name, created_at FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC')
+    .get(userId) as Omit<ApiTokenRow, 'token_hash' | 'last_used_at' | 'revoked_at'>;
+  res.status(201).json({ ...row, token: raw });
+});
+
+router.post('/tokens/:id/revoke', (req, res) => {
+  if (!revokeApiToken(req.params.id, currentUser(req))) throw notFound('Token');
+  res.status(204).end();
 });
 
 // ---------------------------------------------------------------- boards ---
 
-router.get('/boards', (_req, res) => {
+router.get('/boards', (req, res) => {
+  const userId = currentUser(req);
   const rows = db
     .prepare(
       `SELECT b.*, (SELECT COUNT(*) FROM tasks t WHERE t.board_id = b.id) AS task_count
-       FROM boards b ORDER BY b.created_at ASC`,
+       FROM boards b WHERE b.user_id = ? ORDER BY b.created_at ASC`,
     )
-    .all() as unknown as (BoardRow & { task_count: number })[];
-  res.json(rows.map(({ next_task_number, ...rest }) => rest));
+    .all(userId) as unknown as (BoardRow & { task_count: number })[];
+  res.json(rows.map(publicBoard));
 });
 
 const createBoardSchema = z.object({
@@ -105,15 +172,15 @@ const createBoardSchema = z.object({
 
 router.post('/boards', (req, res) => {
   const input = parse(createBoardSchema, req.body);
-  if (input.key && boardByIdOrKey(input.key)) {
+  if (input.key && boardByIdOrKey(input.key, currentUser(req))) {
     throw new HttpError(409, `Board key "${input.key.toUpperCase()}" is already taken`);
   }
-  const board = createBoardWithDefaults(input);
-  res.status(201).json(board);
+  const board = createBoardWithDefaults(input, currentUser(req));
+  res.status(201).json(publicBoard(board));
 });
 
 router.get('/boards/:boardId', (req, res) => {
-  const board = requireBoard(req.params.boardId);
+  const board = requireBoard(req.params.boardId, currentUser(req));
   const columns = listColumns(board.id).map((col) => {
     const tasks = db
       .prepare(
@@ -123,7 +190,7 @@ router.get('/boards/:boardId', (req, res) => {
       .all(col.id) as unknown as (TaskRow & { comment_count: number })[];
     return { ...col, tasks: tasks.map(mapTask) };
   });
-  res.json({ ...board, columns });
+  res.json({ ...publicBoard(board), columns });
 });
 
 const updateBoardSchema = z.object({
@@ -132,7 +199,8 @@ const updateBoardSchema = z.object({
 });
 
 router.patch('/boards/:boardId', (req, res) => {
-  const board = requireBoard(req.params.boardId);
+  const userId = currentUser(req);
+  const board = requireBoard(req.params.boardId, userId);
   const input = parse(updateBoardSchema, req.body);
   db.prepare('UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE id = ?').run(
     input.name ?? board.name,
@@ -140,11 +208,11 @@ router.patch('/boards/:boardId', (req, res) => {
     now(),
     board.id,
   );
-  res.json(requireBoard(board.id));
+  res.json(publicBoard(requireBoard(board.id, userId)));
 });
 
 router.delete('/boards/:boardId', (req, res) => {
-  const board = requireBoard(req.params.boardId);
+  const board = requireBoard(req.params.boardId, currentUser(req));
   db.prepare('DELETE FROM boards WHERE id = ?').run(board.id);
   res.status(204).end();
 });
@@ -157,7 +225,7 @@ const createColumnSchema = z.object({
 });
 
 router.post('/boards/:boardId/columns', (req, res) => {
-  const board = requireBoard(req.params.boardId);
+  const board = requireBoard(req.params.boardId, currentUser(req));
   const input = parse(createColumnSchema, req.body);
   const ts = now();
   const id = uid();
@@ -165,7 +233,7 @@ router.post('/boards/:boardId/columns', (req, res) => {
   db.prepare(
     'INSERT INTO columns (id, board_id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(id, board.id, input.name, position, ts, ts);
-  res.status(201).json(columnById(id));
+  res.status(201).json(columnById(id, currentUser(req)));
 });
 
 const updateColumnSchema = z.object({
@@ -174,7 +242,8 @@ const updateColumnSchema = z.object({
 });
 
 router.patch('/columns/:id', (req, res) => {
-  const column = columnById(req.params.id);
+  const userId = currentUser(req);
+  const column = columnById(req.params.id, userId);
   if (!column) throw notFound('Column');
   const input = parse(updateColumnSchema, req.body);
   db.prepare('UPDATE columns SET name = ?, position = ?, updated_at = ? WHERE id = ?').run(
@@ -183,11 +252,12 @@ router.patch('/columns/:id', (req, res) => {
     now(),
     column.id,
   );
-  res.json(columnById(column.id));
+  res.json(columnById(column.id, userId));
 });
 
 router.delete('/columns/:id', (req, res) => {
-  const column = columnById(req.params.id);
+  const userId = currentUser(req);
+  const column = columnById(req.params.id, userId);
   if (!column) throw notFound('Column');
   const siblings = listColumns(column.board_id);
   if (siblings.length <= 1) {
@@ -200,12 +270,13 @@ router.delete('/columns/:id', (req, res) => {
 // ----------------------------------------------------------------- tasks ---
 
 router.get('/tasks', (req, res) => {
+  const userId = currentUser(req);
   const { board, column, assignee, label, q } = req.query as Record<string, string | undefined>;
-  const clauses: string[] = [];
-  const params: string[] = [];
+  const clauses: string[] = ['b.user_id = ?'];
+  const params: string[] = [userId];
 
   if (board) {
-    const b = requireBoard(board);
+    const b = requireBoard(board, userId);
     clauses.push('t.board_id = ?');
     params.push(b.id);
   }
@@ -227,11 +298,12 @@ router.get('/tasks', (req, res) => {
     params.push(like, like, q);
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const where = `WHERE ${clauses.join(' AND ')}`;
   const rows = db
     .prepare(
       `SELECT t.*, (SELECT COUNT(*) FROM comments c WHERE c.task_id = t.id) AS comment_count
        FROM tasks t JOIN columns col ON col.id = t.column_id
+       JOIN boards b ON b.id = t.board_id
        ${where} ORDER BY col.position ASC, t.position ASC`,
     )
     .all(...params) as unknown as (TaskRow & { comment_count: number })[];
@@ -251,13 +323,16 @@ const createTaskSchema = z.object({
 });
 
 router.post('/tasks', (req, res) => {
+  const userId = currentUser(req);
   const input = parse(createTaskSchema, req.body);
   const boardRef = input.board_id ?? input.board;
   if (!boardRef) throw new HttpError(400, 'board (id or key) is required');
-  const board = requireBoard(boardRef);
+  const board = requireBoard(boardRef, userId);
 
   const columnRef = input.column_id ?? input.column;
-  const column = columnRef ? columnByIdOrName(columnRef, board.id) : listColumns(board.id)[0];
+  const column = columnRef
+    ? columnByIdOrName(columnRef, board.id, userId)
+    : listColumns(board.id)[0];
   if (!column || column.board_id !== board.id) throw notFound('Column');
 
   const ts = now();
@@ -302,7 +377,7 @@ router.post('/tasks', (req, res) => {
 });
 
 router.get('/tasks/:taskId', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const task = requireTask(req.params.taskId, currentUser(req));
   res.json(taskWithCount(task.id));
 });
 
@@ -318,14 +393,15 @@ const updateTaskSchema = z.object({
 });
 
 router.patch('/tasks/:taskId', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const userId = currentUser(req);
+  const task = requireTask(req.params.taskId, userId);
   const input = parse(updateTaskSchema, req.body);
 
   let columnId = task.column_id;
   let position = task.position;
   const columnRef = input.column_id ?? input.column;
   if (columnRef) {
-    const column = columnByIdOrName(columnRef, task.board_id);
+    const column = columnByIdOrName(columnRef, task.board_id, userId);
     if (!column || column.board_id !== task.board_id) throw notFound('Column');
     columnId = column.id;
     if (column.id !== task.column_id && input.position === undefined) {
@@ -357,9 +433,10 @@ const moveTaskSchema = z.object({
 });
 
 router.post('/tasks/:taskId/move', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const userId = currentUser(req);
+  const task = requireTask(req.params.taskId, userId);
   const input = parse(moveTaskSchema, req.body);
-  const column = columnByIdOrName(input.column, task.board_id);
+  const column = columnByIdOrName(input.column, task.board_id, userId);
   if (!column || column.board_id !== task.board_id) throw notFound('Column');
   const position =
     input.position ??
@@ -374,7 +451,7 @@ router.post('/tasks/:taskId/move', (req, res) => {
 });
 
 router.delete('/tasks/:taskId', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const task = requireTask(req.params.taskId, currentUser(req));
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
   res.status(204).end();
 });
@@ -382,7 +459,7 @@ router.delete('/tasks/:taskId', (req, res) => {
 // -------------------------------------------------------------- comments ---
 
 router.get('/tasks/:taskId/comments', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const task = requireTask(req.params.taskId, currentUser(req));
   const rows = db
     .prepare('SELECT * FROM comments WHERE task_id = ? ORDER BY created_at ASC, rowid ASC')
     .all(task.id) as unknown as CommentRow[];
@@ -395,7 +472,7 @@ const createCommentSchema = z.object({
 });
 
 router.post('/tasks/:taskId/comments', (req, res) => {
-  const task = requireTask(req.params.taskId);
+  const task = requireTask(req.params.taskId, currentUser(req));
   const input = parse(createCommentSchema, req.body);
   const id = uid();
   db.prepare('INSERT INTO comments (id, task_id, body, author, created_at) VALUES (?, ?, ?, ?, ?)').run(

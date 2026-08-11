@@ -1,11 +1,18 @@
 // Smoke test: spawn the MCP server over stdio and exercise its tools.
-// Usage: node scripts/smoke-test.mjs  (requires the API server to be running)
+// Usage: node scripts/smoke-test.mjs  (requires the API server to be running
+// and KANBAN_AUTH_TOKEN set to one of your API tokens)
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+if (!process.env.KANBAN_AUTH_TOKEN) {
+  console.warn(
+    'WARNING: KANBAN_AUTH_TOKEN is not set. Create an API token in the web app (API tokens) and retry.',
+  );
+}
 
 const transport = new StdioClientTransport({
   command: 'node',

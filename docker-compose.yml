@@ -6,7 +6,6 @@ services:
       - "127.0.0.1:3001:3001"
     environment:
       MUELLE_HEALTH: /api/health
-      KANBAN_AUTH_TOKEN: ${KANBAN_AUTH_TOKEN:-}
     volumes:
       - kanban_data:/data
     restart: unless-stopped
