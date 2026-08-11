@@ -53,7 +53,7 @@ const priority = z.enum(['low', 'medium', 'high', 'urgent']);
 
 const server = new McpServer({
   name: 'agentic-kanban',
-  version: '0.1.0',
+  version: '0.1.1',
 });
 
 server.tool(

@@ -68,7 +68,7 @@ function taskWithCount(id: string) {
 export const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, version: '0.1.0' });
+  res.json({ ok: true, version: '0.1.1' });
 });
 
 // ---------------------------------------------------------------- boards ---

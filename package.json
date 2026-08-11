@@ -1,6 +1,6 @@
 {
   "name": "agentic-kanban",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Open source kanban board with a built-in MCP server so AI agents can read and manage tasks",
   "license": "MIT",
