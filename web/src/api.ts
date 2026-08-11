@@ -3,6 +3,20 @@ import type { Board, BoardFull, Comment, Priority, Task } from './types';
 const BASE = '/api';
 const TOKEN_KEY = 'kanban.token';
 
+export interface User {
+  id: string;
+  email: string;
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -59,13 +73,29 @@ export interface TaskInput {
   column_id?: string;
 }
 
+interface AuthResponse {
+  user: User;
+  token: string;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; version: string }>('GET', '/health'),
-  login: async (token: string) => {
-    const result = await request<{ ok: boolean }>('POST', '/auth/login', { token }, token);
-    setToken(token);
+  login: async (email: string, password: string) => {
+    const result = await request<AuthResponse>('POST', '/auth/login', { email, password });
+    setToken(result.token);
     return result;
   },
+  register: async (email: string, password: string) => {
+    const result = await request<AuthResponse>('POST', '/auth/register', { email, password }, null);
+    setToken(result.token);
+    return result;
+  },
+  me: () => request<{ user: User }>('GET', '/auth/me'),
+  logout: () => request<void>('POST', '/auth/logout'),
+  listTokens: () => request<ApiToken[]>('GET', '/tokens'),
+  createToken: (name: string) =>
+    request<ApiToken & { token: string }>('POST', '/tokens', { name }),
+  revokeToken: (id: string) => request<void>('POST', `/tokens/${encodeURIComponent(id)}/revoke`),
   listBoards: () => request<Board[]>('GET', '/boards'),
   getBoard: (idOrKey: string) => request<BoardFull>('GET', `/boards/${encodeURIComponent(idOrKey)}`),
   createBoard: (input: { name: string; key?: string; description?: string }) =>

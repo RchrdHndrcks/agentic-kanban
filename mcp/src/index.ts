@@ -30,6 +30,11 @@ async function api<T = unknown>(method: string, path: string, body?: unknown): P
     throw new Error(`Unexpected response from the Kanban API (${res.status})`);
   }
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(
+        'Unauthorized: set KANBAN_AUTH_TOKEN to a valid API token. Create one in the web app under "API tokens".',
+      );
+    }
     const message = (data as { error?: string } | undefined)?.error ?? `Request failed (${res.status})`;
     throw new Error(message);
   }
@@ -57,7 +62,7 @@ const priority = z.enum(['low', 'medium', 'high', 'urgent']);
 
 const server = new McpServer({
   name: 'agentic-kanban',
-  version: '0.2.0',
+  version: '0.3.0',
 });
 
 server.tool(

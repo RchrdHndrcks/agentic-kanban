@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, clearToken, getToken, onUnauthorized } from './api';
+import { api, clearToken, getToken, onUnauthorized, type User } from './api';
+import ApiTokensModal from './components/ApiTokensModal';
 import { BoardSkeleton, BoardView } from './components/Board';
 import { ConfirmDialog, NewBoardModal } from './components/Modals';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { useToast } from './components/Toasts';
-import Login from './Login';
+import Auth from './Auth';
 import type { Board, BoardFull, ColumnWithTasks, Task } from './types';
 
 function Logo() {
@@ -26,6 +27,7 @@ export default function App() {
   const [authState, setAuthState] = useState<'loading' | 'authed' | 'signin'>(
     getToken() ? 'loading' : 'authed',
   );
+  const [user, setUser] = useState<User | null>(null);
   const [boards, setBoards] = useState<Board[] | null>(null);
   const [selected, setSelected] = useState(() => localStorage.getItem('kanban.board') ?? '');
   const [board, setBoard] = useState<BoardFull | null>(null);
@@ -36,6 +38,7 @@ export default function App() {
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [taskModal, setTaskModal] = useState<TaskModalState | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [tokensOpen, setTokensOpen] = useState(false);
   const [confirm, setConfirm] = useState<{
     title: string;
     body: string;
@@ -83,7 +86,18 @@ export default function App() {
 
   useEffect(() => {
     onUnauthorized(() => setAuthState('signin'));
-    loadBoards().then(() => setAuthState('authed'));
+    api
+      .me()
+      .then(({ user: current }) => {
+        setUser(current);
+        setAuthState('authed');
+      })
+      .catch(() => setAuthState('signin'))
+      .finally(() => {
+        if (getToken()) {
+          loadBoards();
+        }
+      });
     api
       .health()
       .then(() => setHealthy(true))
@@ -93,10 +107,17 @@ export default function App() {
 
   if (authState === 'signin') {
     return (
-      <Login
+      <Auth
         onSuccess={() => {
           setAuthState('loading');
-          loadBoards().then(() => setAuthState('authed'));
+          api
+            .me()
+            .then(({ user: current }) => {
+              setUser(current);
+              setAuthState('authed');
+            })
+            .catch(() => setAuthState('signin'));
+          loadBoards();
         }}
       />
     );
@@ -278,6 +299,18 @@ export default function App() {
           )}
           <button
             type="button"
+            className="btn-ghost"
+            onClick={() => setTokensOpen(true)}
+            title="Create and manage API tokens for agents"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="7.5" cy="15.5" r="4.5" />
+              <path d="m10.7 12.3 8.8-8.8M16 5l3 3M19 8l2.5 2.5M14 10.5l1.5 1.5" />
+            </svg>
+            API tokens
+          </button>
+          <button
+            type="button"
             className="btn-primary"
             disabled={!visibleBoard || visibleBoard.columns.length === 0}
             onClick={() => {
@@ -368,19 +401,23 @@ export default function App() {
         />
         <span>{healthy ? 'API online · MCP ready' : 'API offline'}</span>
         <span className="flex-1" />
-        {getToken() && (
-          <button
-            type="button"
-            className="cursor-pointer transition-colors hover:text-ink"
-            onClick={() => {
-              clearToken();
-              setAuthState('signin');
-            }}
-          >
-            Sign out
-          </button>
-        )}
-        <span>MIT · Agentic Kanban v0.2</span>
+        {user && <span className="hidden sm:inline">{user.email}</span>}
+        <button
+          type="button"
+          className="cursor-pointer transition-colors hover:text-ink"
+          onClick={async () => {
+            try {
+              await api.logout();
+            } catch {
+              // The session may already be dead; clear locally regardless.
+            }
+            clearToken();
+            setAuthState('signin');
+          }}
+        >
+          Sign out
+        </button>
+        <span>MIT · Agentic Kanban v0.3</span>
       </footer>
 
       {taskModal && visibleBoard && (
@@ -403,6 +440,7 @@ export default function App() {
           }}
         />
       )}
+      {tokensOpen && <ApiTokensModal onClose={() => setTokensOpen(false)} />}
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
