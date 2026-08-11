@@ -5,13 +5,17 @@ import { z } from 'zod';
 
 const API_URL = (process.env.KANBAN_API_URL ?? 'http://localhost:3001/api').replace(/\/$/, '');
 const DEFAULT_AUTHOR = process.env.KANBAN_AUTHOR ?? 'agent';
+const TOKEN = process.env.KANBAN_AUTH_TOKEN;
 
 async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       method,
-      headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+      headers: {
+        ...(body !== undefined ? { 'content-type': 'application/json' } : undefined),
+        ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : undefined),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -53,7 +57,7 @@ const priority = z.enum(['low', 'medium', 'high', 'urgent']);
 
 const server = new McpServer({
   name: 'agentic-kanban',
-  version: '0.1.1',
+  version: '0.2.0',
 });
 
 server.tool(

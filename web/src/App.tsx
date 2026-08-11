@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from './api';
+import { api, clearToken, getToken, onUnauthorized } from './api';
 import { BoardSkeleton, BoardView } from './components/Board';
 import { ConfirmDialog, NewBoardModal } from './components/Modals';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { useToast } from './components/Toasts';
+import Login from './Login';
 import type { Board, BoardFull, ColumnWithTasks, Task } from './types';
 
 function Logo() {
@@ -22,6 +23,9 @@ function Logo() {
 
 export default function App() {
   const toast = useToast();
+  const [authState, setAuthState] = useState<'loading' | 'authed' | 'signin'>(
+    getToken() ? 'loading' : 'authed',
+  );
   const [boards, setBoards] = useState<Board[] | null>(null);
   const [selected, setSelected] = useState(() => localStorage.getItem('kanban.board') ?? '');
   const [board, setBoard] = useState<BoardFull | null>(null);
@@ -78,13 +82,33 @@ export default function App() {
   }, [loadBoard]);
 
   useEffect(() => {
-    loadBoards();
+    onUnauthorized(() => setAuthState('signin'));
+    loadBoards().then(() => setAuthState('authed'));
     api
       .health()
       .then(() => setHealthy(true))
       .catch(() => setHealthy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (authState === 'signin') {
+    return (
+      <Login
+        onSuccess={() => {
+          setAuthState('loading');
+          loadBoards().then(() => setAuthState('authed'));
+        }}
+      />
+    );
+  }
+
+  if (authState === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <span className="font-mono text-xs text-ink-soft">Loading…</span>
+      </div>
+    );
+  }
 
   const selectBoard = (id: string) => {
     setSelected(id);
@@ -344,7 +368,19 @@ export default function App() {
         />
         <span>{healthy ? 'API online · MCP ready' : 'API offline'}</span>
         <span className="flex-1" />
-        <span>MIT · Agentic Kanban v0.1</span>
+        {getToken() && (
+          <button
+            type="button"
+            className="cursor-pointer transition-colors hover:text-ink"
+            onClick={() => {
+              clearToken();
+              setAuthState('signin');
+            }}
+          >
+            Sign out
+          </button>
+        )}
+        <span>MIT · Agentic Kanban v0.2</span>
       </footer>
 
       {taskModal && visibleBoard && (
