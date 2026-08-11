@@ -105,32 +105,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (authState === 'signin') {
-    return (
-      <Auth
-        onSuccess={() => {
-          setAuthState('loading');
-          api
-            .me()
-            .then(({ user: current }) => {
-              setUser(current);
-              setAuthState('authed');
-            })
-            .catch(() => setAuthState('signin'));
-          loadBoards();
-        }}
-      />
-    );
-  }
-
-  if (authState === 'loading') {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <span className="font-mono text-xs text-ink-soft">Loading…</span>
-      </div>
-    );
-  }
-
   const selectBoard = (id: string) => {
     setSelected(id);
     localStorage.setItem('kanban.board', id);
@@ -193,6 +167,32 @@ export default function App() {
   }, [board]);
 
   const currentBoardMeta = boards?.find((b) => b.id === selected);
+
+  if (authState === 'signin') {
+    return (
+      <Auth
+        onSuccess={() => {
+          setAuthState('loading');
+          api
+            .me()
+            .then(({ user: current }) => {
+              setUser(current);
+              setAuthState('authed');
+            })
+            .catch(() => setAuthState('signin'));
+          loadBoards();
+        }}
+      />
+    );
+  }
+
+  if (authState === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <span className="font-mono text-xs text-ink-soft">Loading…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
