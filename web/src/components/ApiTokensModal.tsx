@@ -36,6 +36,25 @@ export default function ApiTokensModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const copy = async () => {
+    if (!fresh) return;
+    const text = fresh.token;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    toast('Token copied');
+    setFresh(null);
+  };
+
   const revoke = async (token: ApiToken) => {
     try {
       await api.revokeToken(token.id);
@@ -66,11 +85,7 @@ export default function ApiTokensModal({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 className="btn-secondary shrink-0"
-                onClick={() => {
-                  navigator.clipboard.writeText(fresh.token).catch(() => undefined);
-                  toast('Token copied');
-                  setFresh(null);
-                }}
+                onClick={copy}
               >
                 Copy
               </button>

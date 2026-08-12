@@ -118,7 +118,7 @@ export function listApiTokens(userId: string): (Omit<ApiTokenRow, 'token_hash' |
   prefix: string;
 })[] {
   const rows = db
-    .prepare('SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC')
+    .prepare('SELECT * FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC')
     .all(userId) as unknown as ApiTokenRow[];
   return rows.map((row) => ({
     id: row.id,
