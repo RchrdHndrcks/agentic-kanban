@@ -79,7 +79,7 @@ export default function ApiTokensModal({ onClose }: { onClose: () => void }) {
             <p className="text-sm font-semibold">“{fresh.name}” created — copy it now</p>
             <p className="mt-1 text-xs text-ink-soft">This is the only time the full token is shown.</p>
             <div className="mt-2.5 flex items-center gap-2">
-              <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-line bg-white px-3 py-2 font-mono text-[11px]">
+              <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-line bg-panel px-3 py-2 font-mono text-[11px]">
                 {fresh.token}
               </code>
               <button

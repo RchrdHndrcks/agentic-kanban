@@ -117,7 +117,7 @@ function ColumnView({
             aria-label={`Delete column ${column.name}`}
             title="Delete column"
             onClick={() => onDeleteColumn(column)}
-            className="rounded p-1 text-ink-soft/0 transition-colors group-hover:text-ink-soft hover:bg-red-50 hover:text-red-600!"
+            className="danger-hover rounded p-1 text-ink-soft/0 transition-colors group-hover:text-ink-soft hover:bg-red-50 hover:text-red-600!"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />

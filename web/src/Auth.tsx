@@ -58,7 +58,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="flex min-h-full items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <div className="rounded-2xl border border-line bg-white p-8 shadow-[0_24px_64px_rgba(28,28,25,0.10)] animate-pop-in">
+        <div className="rounded-2xl border border-line bg-panel p-8 shadow-[0_24px_64px_rgba(28,28,25,0.10)] animate-pop-in">
           <div className="mb-6 flex items-center justify-center"><Logo /></div>
           <h1 className="text-center font-display text-lg font-semibold">
             {mode === 'signin' ? 'Sign in to your board' : 'Create your account'}

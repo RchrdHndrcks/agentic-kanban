@@ -34,8 +34,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             className={cx(
               'pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm font-medium shadow-lg animate-toast-in',
-              toast.kind === 'success' && 'border-line bg-white text-ink',
-              toast.kind === 'error' && 'border-red-200 bg-red-50 text-red-800',
+              toast.kind === 'success' && 'border-line bg-panel text-ink',
+              toast.kind === 'error' && 'toast-error border-red-200 bg-red-50 text-red-800',
             )}
           >
             <span

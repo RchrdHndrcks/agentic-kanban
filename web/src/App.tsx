@@ -9,6 +9,7 @@ import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { useToast } from './components/Toasts';
 import Auth from './Auth';
 import type { Board, BoardFull, ColumnWithTasks, Task } from './types';
+import { useTheme } from './useTheme';
 
 function Logo() {
   return (
@@ -26,6 +27,7 @@ function Logo() {
 
 export default function App() {
   const toast = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [authState, setAuthState] = useState<'loading' | 'authed' | 'signin'>(
     getToken() ? 'loading' : 'authed',
   );
@@ -310,6 +312,24 @@ export default function App() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-ghost px-2.5"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+              </svg>
+            )}
+          </button>
           <div className="relative">
             <svg
               className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-soft"
@@ -445,7 +465,7 @@ export default function App() {
       <main className="min-h-0 flex-1">
         {fatalError && !board ? (
           <div className="flex h-full items-center justify-center p-6">
-            <div className="max-w-sm rounded-2xl border border-line bg-white p-8 text-center">
+            <div className="max-w-sm rounded-2xl border border-line bg-panel p-8 text-center">
               <span className="mx-auto mb-4 block h-2.5 w-2.5 rounded-full bg-red-500" />
               <h1 className="font-display text-lg font-semibold">Something went wrong</h1>
               <p className="mt-2 text-sm leading-relaxed text-ink-soft">{fatalError}</p>
@@ -456,7 +476,7 @@ export default function App() {
           </div>
         ) : boards && boards.length === 0 ? (
           <div className="flex h-full items-center justify-center p-6">
-            <div className="max-w-sm rounded-2xl border border-line bg-white p-8 text-center">
+            <div className="max-w-sm rounded-2xl border border-line bg-panel p-8 text-center">
               <div className="mx-auto mb-4 w-fit"><Logo /></div>
               <h1 className="font-display text-lg font-semibold">Create your first board</h1>
               <p className="mt-2 text-sm leading-relaxed text-ink-soft">
