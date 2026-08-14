@@ -90,6 +90,14 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS board_members (
+  board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (board_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_board_members_user ON board_members(user_id);
 `);
 
 // Migration: boards created before accounts existed have no owner. Their
@@ -161,28 +169,41 @@ export function mapTask(row: TaskRow & { comment_count?: number }) {
   return { ...rest, labels: JSON.parse(labels) as string[] };
 }
 
+/**
+ * SQL fragment that is true when the user owns the board (alias) or is a
+ * member of it. Takes two `?` params, both the user id.
+ */
+export function boardAccessSql(alias: string): string {
+  return `(${alias}.user_id = ? OR EXISTS (SELECT 1 FROM board_members bm WHERE bm.board_id = ${alias}.id AND bm.user_id = ?))`;
+}
+
 export function boardByIdOrKey(idOrKey: string, userId: string): BoardRow | undefined {
   return db
-    .prepare('SELECT * FROM boards WHERE user_id = ? AND (id = ? OR upper(key) = upper(?))')
-    .get(userId, idOrKey, idOrKey) as BoardRow | undefined;
+    .prepare(
+      `SELECT b.* FROM boards b
+       WHERE ${boardAccessSql('b')} AND (b.id = ? OR upper(b.key) = upper(?))
+       ORDER BY (b.user_id = ?) DESC`,
+    )
+    .get(userId, userId, idOrKey, idOrKey, userId) as BoardRow | undefined;
 }
 
 export function taskByIdOrKey(idOrKey: string, userId: string): TaskRow | undefined {
   return db
     .prepare(
       `SELECT t.* FROM tasks t JOIN boards b ON b.id = t.board_id
-       WHERE b.user_id = ? AND (t.id = ? OR upper(t.key) = upper(?))`,
+       WHERE ${boardAccessSql('b')} AND (t.id = ? OR upper(t.key) = upper(?))
+       ORDER BY (b.user_id = ?) DESC`,
     )
-    .get(userId, idOrKey, idOrKey) as TaskRow | undefined;
+    .get(userId, userId, idOrKey, idOrKey, userId) as TaskRow | undefined;
 }
 
 export function columnById(id: string, userId: string): ColumnRow | undefined {
   return db
     .prepare(
       `SELECT col.* FROM columns col JOIN boards b ON b.id = col.board_id
-       WHERE b.user_id = ? AND col.id = ?`,
+       WHERE ${boardAccessSql('b')} AND col.id = ?`,
     )
-    .get(userId, id) as ColumnRow | undefined;
+    .get(userId, userId, id) as ColumnRow | undefined;
 }
 
 /** Resolve a column by id, or by (case-insensitive) name within a board. */
@@ -258,6 +279,74 @@ export function claimOrphanBoards(userId: string): number {
     c: number;
   };
   return row.c;
+}
+
+// ------------------------------------------------------------ membership ---
+
+export type BoardRole = 'owner' | 'member';
+
+export interface BoardMemberRow {
+  user_id: string;
+  email: string;
+  role: BoardRole;
+  created_at: string;
+}
+
+/** 'owner' when the user owns the board, 'member' when invited, undefined otherwise. */
+export function boardRole(boardId: string, userId: string): BoardRole | undefined {
+  const row = db
+    .prepare(
+      `SELECT CASE WHEN b.user_id = ? THEN 'owner' ELSE 'member' END AS role
+       FROM boards b
+       LEFT JOIN board_members bm ON bm.board_id = b.id AND bm.user_id = ?
+       WHERE b.id = ? AND (b.user_id = ? OR bm.user_id IS NOT NULL)`,
+    )
+    .get(userId, userId, boardId, userId) as { role: BoardRole } | undefined;
+  return row?.role;
+}
+
+/** Everyone who can open the board: the owner first, then invited members. */
+export function listBoardMembers(boardId: string): BoardMemberRow[] {
+  const owner = db
+    .prepare(
+      `SELECT b.user_id, u.email, b.created_at FROM boards b
+       JOIN users u ON u.id = b.user_id WHERE b.id = ? AND b.user_id IS NOT NULL`,
+    )
+    .get(boardId) as { user_id: string; email: string; created_at: string } | undefined;
+  const members = db
+    .prepare(
+      `SELECT bm.user_id, u.email, bm.created_at FROM board_members bm
+       JOIN users u ON u.id = bm.user_id WHERE bm.board_id = ? ORDER BY bm.created_at ASC`,
+    )
+    .all(boardId) as unknown as { user_id: string; email: string; created_at: string }[];
+  const rows: BoardMemberRow[] = [];
+  if (owner) rows.push({ ...owner, role: 'owner' });
+  for (const member of members) rows.push({ ...member, role: 'member' });
+  return rows;
+}
+
+export function addBoardMember(boardId: string, userId: string): void {
+  db.prepare('INSERT INTO board_members (board_id, user_id, created_at) VALUES (?, ?, ?)').run(
+    boardId,
+    userId,
+    now(),
+  );
+}
+
+export function removeBoardMember(boardId: string, userId: string): boolean {
+  return db.prepare('DELETE FROM board_members WHERE board_id = ? AND user_id = ?').run(boardId, userId).changes > 0;
+}
+
+/** Ids of everyone with access to the board (owner + members) — SSE fan-out targets. */
+export function userIdsForBoard(boardId: string): string[] {
+  const rows = db
+    .prepare(
+      `SELECT user_id FROM boards WHERE id = ? AND user_id IS NOT NULL
+       UNION
+       SELECT user_id FROM board_members WHERE board_id = ?`,
+    )
+    .all(boardId, boardId) as unknown as { user_id: string }[];
+  return rows.map((row) => row.user_id);
 }
 
 /** First-run experience: one default board, no tasks (empty states stay visible). */

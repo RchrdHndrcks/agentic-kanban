@@ -147,10 +147,15 @@ export function currentUser(req: Request): string {
   return (req as AuthedRequest).userId;
 }
 
-function readBearer(req: Request): string | undefined {
+export function readBearer(req: Request): string | undefined {
   const header = req.headers.authorization ?? '';
   const [scheme, token, ...rest] = header.split(' ');
   return scheme?.toLowerCase() === 'bearer' && token && rest.length === 0 ? token : undefined;
+}
+
+/** Resolve any raw token — login session or `kt_` API token — to its user. */
+export function userForToken(raw: string): UserRow | undefined {
+  return raw.startsWith(API_TOKEN_PREFIX) ? userForApiToken(raw) : userForSession(raw);
 }
 
 /**
@@ -159,7 +164,7 @@ function readBearer(req: Request): string | undefined {
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const raw = readBearer(req);
-  const user = raw ? (raw.startsWith(API_TOKEN_PREFIX) ? userForApiToken(raw) : userForSession(raw)) : undefined;
+  const user = raw ? userForToken(raw) : undefined;
   if (!user) {
     res.setHeader('WWW-Authenticate', 'Bearer');
     res.status(401).json({ error: 'Unauthorized' });

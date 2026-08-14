@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, clearToken, getToken, onUnauthorized, type User } from './api';
 import ApiTokensModal from './components/ApiTokensModal';
 import { BoardSkeleton, BoardView } from './components/Board';
-import { ConfirmDialog, NewBoardModal } from './components/Modals';
+import { ConfirmDialog, NewBoardModal, NewColumnModal } from './components/Modals';
+import ShareBoardModal from './components/ShareBoardModal';
+import { Avatar } from './components/TaskModal';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { useToast } from './components/Toasts';
 import Auth from './Auth';
@@ -38,7 +40,10 @@ export default function App() {
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [taskModal, setTaskModal] = useState<TaskModalState | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [newColumnOpen, setNewColumnOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [live, setLive] = useState(false);
   const [confirm, setConfirm] = useState<{
     title: string;
     body: string;
@@ -115,6 +120,68 @@ export default function App() {
   const refreshBoard = useCallback(() => {
     if (selected) loadBoard(selected, { soft: true });
   }, [selected, loadBoard]);
+
+  // Ref so SSE handlers (bound once per session) always see the current board.
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  /** Reload the board list (and current board) without any loading spinners. */
+  const loadBoardsSoft = useCallback(async () => {
+    try {
+      const list = await api.listBoards();
+      setBoards(list);
+      const current = selectedRef.current;
+      const stillThere = list.some((b) => b.id === current || b.key === current);
+      const next = stillThere ? current : (list[0]?.id ?? '');
+      if (next !== current) {
+        setSelected(next);
+        localStorage.setItem('kanban.board', next);
+      }
+      if (next) {
+        await loadBoard(next, { soft: true });
+      } else {
+        setBoard(null);
+      }
+    } catch {
+      // Transient failure — the next event (or user action) retries.
+    }
+  }, [loadBoard]);
+
+  // Live updates: the server pushes SSE events whenever a collaborator (human
+  // or MCP agent) changes something. Soft refreshes only — never a skeleton.
+  useEffect(() => {
+    if (authState !== 'authed') return;
+    const token = getToken();
+    if (!token) return;
+    const source = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+    let timer: number | undefined;
+    let pending: 'board' | 'boards' | null = null;
+    const flush = () => {
+      timer = undefined;
+      const what = pending;
+      pending = null;
+      if (what === 'boards') loadBoardsSoft();
+      else if (what === 'board' && selectedRef.current) loadBoard(selectedRef.current, { soft: true });
+    };
+    const schedule = (what: 'board' | 'boards') => {
+      pending = what === 'boards' ? 'boards' : (pending ?? 'board');
+      if (timer === undefined) timer = window.setTimeout(flush, 150);
+    };
+    source.addEventListener('board', (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as { boardId?: string };
+      if (data.boardId && data.boardId === selectedRef.current) schedule('board');
+    });
+    source.addEventListener('boards', () => schedule('boards'));
+    source.onopen = () => setLive(true);
+    source.onerror = () => setLive(false); // EventSource retries automatically
+    return () => {
+      source.close();
+      setLive(false);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [authState, loadBoard, loadBoardsSoft]);
 
   const moveTask = useCallback(
     (taskId: string, columnId: string, position: number) => {
@@ -221,6 +288,26 @@ export default function App() {
             )}
           </div>
         )}
+        {board?.members && board.members.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="flex items-center"
+            title="Board members — manage sharing"
+            aria-label="Board members — manage sharing"
+          >
+            <span className="flex items-center -space-x-1.5">
+              {board.members.slice(0, 5).map((member) => (
+                <span key={member.user_id} className="rounded-full ring-2 ring-paper">
+                  <Avatar name={member.email} size="sm" />
+                </span>
+              ))}
+            </span>
+            {board.members.length > 5 && (
+              <span className="chip ml-1.5">+{board.members.length - 5}</span>
+            )}
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">
@@ -273,7 +360,22 @@ export default function App() {
             </svg>
             Board
           </button>
-          {currentBoardMeta && (
+          {visibleBoard && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setShareOpen(true)}
+              title="Share this board with other people"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Share
+            </button>
+          )}
+          {currentBoardMeta && currentBoardMeta.role !== 'member' && (
             <button
               type="button"
               className="btn-ghost text-ink-soft hover:text-red-600"
@@ -308,6 +410,20 @@ export default function App() {
               <path d="m10.7 12.3 8.8-8.8M16 5l3 3M19 8l2.5 2.5M14 10.5l1.5 1.5" />
             </svg>
             API tokens
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={!visibleBoard}
+            onClick={() => setNewColumnOpen(true)}
+            title="Add a column — existing ones shrink to make room"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <rect x="3" y="4" width="5" height="16" rx="1.5" />
+              <rect x="10" y="4" width="5" height="16" rx="1.5" />
+              <path d="M18.5 9v6M15.5 12h6" />
+            </svg>
+            Column
           </button>
           <button
             type="button"
@@ -360,15 +476,6 @@ export default function App() {
             onOpenTask={(task) => setTaskModal({ kind: 'edit', task })}
             onAddTask={(columnId) => setTaskModal({ kind: 'create', columnId })}
             onMoveTask={moveTask}
-            onAddColumn={async (name) => {
-              try {
-                await api.createColumn(selected, name);
-                toast(`Added column “${name}”`);
-                refreshBoard();
-              } catch (err) {
-                toast(err instanceof Error ? err.message : 'Could not add the column.', 'error');
-              }
-            }}
             onDeleteColumn={(column: ColumnWithTasks) =>
               setConfirm({
                 title: `Delete column “${column.name}”?`,
@@ -399,7 +506,10 @@ export default function App() {
           }
           title={healthy ? 'API reachable' : 'API unreachable'}
         />
-        <span>{healthy ? 'API online · MCP ready' : 'API offline'}</span>
+        <span>
+          {healthy ? 'API online · MCP ready' : 'API offline'}
+          {live && <span className="text-emerald-600"> · live</span>}
+        </span>
         <span className="flex-1" />
         {user && <span className="hidden sm:inline">{user.email}</span>}
         <button
@@ -438,6 +548,26 @@ export default function App() {
             await loadBoards();
             selectBoard(created.id);
           }}
+        />
+      )}
+      {newColumnOpen && (
+        <NewColumnModal
+          onClose={() => setNewColumnOpen(false)}
+          onCreate={async (name) => {
+            await api.createColumn(selected, name);
+            toast(`Added column “${name}”`);
+            refreshBoard();
+          }}
+        />
+      )}
+      {shareOpen && board && user && (
+        <ShareBoardModal
+          boardId={selected}
+          boardName={board.name}
+          role={board.role ?? 'owner'}
+          currentUserId={user.id}
+          onClose={() => setShareOpen(false)}
+          onChanged={loadBoardsSoft}
         />
       )}
       {tokensOpen && <ApiTokensModal onClose={() => setTokensOpen(false)} />}

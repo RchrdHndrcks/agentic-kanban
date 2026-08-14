@@ -18,7 +18,14 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health' || req.path === '/auth/login' || req.path === '/auth/register') {
+  // /events authenticates inside the route: EventSource cannot send headers,
+  // so it accepts the session token as a query parameter.
+  if (
+    req.path === '/health' ||
+    req.path === '/auth/login' ||
+    req.path === '/auth/register' ||
+    req.path === '/events'
+  ) {
     next();
     return;
   }

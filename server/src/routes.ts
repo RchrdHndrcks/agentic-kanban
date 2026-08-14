@@ -8,29 +8,38 @@ import {
   currentUser,
   deleteSession,
   listApiTokens,
+  readBearer,
   revokeApiToken,
   userByEmail,
   userById,
+  userForToken,
   type ApiTokenRow,
 } from './auth.js';
 import {
+  addBoardMember,
+  boardAccessSql,
   boardByIdOrKey,
+  boardRole,
   claimOrphanBoards,
   columnById,
   columnByIdOrName,
   createBoardWithDefaults,
   db,
+  listBoardMembers,
   listColumns,
   mapTask,
   nextPosition,
   now,
+  removeBoardMember,
   taskByIdOrKey,
   uid,
+  userIdsForBoard,
   type BoardRow,
   type ColumnRow,
   type CommentRow,
   type TaskRow,
 } from './db.js';
+import { addClient, emitToUsers } from './events.js';
 
 export class HttpError extends Error {
   constructor(
@@ -84,10 +93,52 @@ function publicBoard(row: BoardRow) {
   return rest;
 }
 
+/** Tell every collaborator that something inside the board changed. */
+const emitBoard = (boardId: string) => emitToUsers(userIdsForBoard(boardId), 'board', { boardId });
+
+/** Tell users their board list changed (created, deleted, renamed, membership). */
+const emitBoards = (userIds: Iterable<string>) => emitToUsers(userIds, 'boards', {});
+
 export const router = Router();
 
 router.get('/health', (_req, res) => {
   res.json({ ok: true, version: '0.3.0' });
+});
+
+// ------------------------------------------------------------------ events ---
+
+/**
+ * Server-Sent Events stream for live updates. EventSource cannot send
+ * headers, so the session token is also accepted as `?token=` here (and only
+ * here — every other route keeps header-only auth via requireAuth).
+ */
+router.get('/events', (req, res) => {
+  const token = readBearer(req) ?? (typeof req.query.token === 'string' ? req.query.token : undefined);
+  const user = token ? userForToken(token) : undefined;
+  if (!user) {
+    res.setHeader('WWW-Authenticate', 'Bearer');
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+  res.write(': connected\n\n');
+  const removeClient = addClient(user.id, res);
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      // Closed mid-write; cleaned up by the close handler below.
+    }
+  }, 25_000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    removeClient();
+  });
 });
 
 // ------------------------------------------------------------------ auth ---
@@ -157,10 +208,16 @@ router.get('/boards', (req, res) => {
   const userId = currentUser(req);
   const rows = db
     .prepare(
-      `SELECT b.*, (SELECT COUNT(*) FROM tasks t WHERE t.board_id = b.id) AS task_count
-       FROM boards b WHERE b.user_id = ? ORDER BY b.created_at ASC`,
+      `SELECT b.*, (SELECT COUNT(*) FROM tasks t WHERE t.board_id = b.id) AS task_count,
+         (SELECT COUNT(*) FROM board_members bm WHERE bm.board_id = b.id) AS member_count,
+         CASE WHEN b.user_id = ? THEN 'owner' ELSE 'member' END AS role
+       FROM boards b WHERE ${boardAccessSql('b')} ORDER BY b.created_at ASC`,
     )
-    .all(userId) as unknown as (BoardRow & { task_count: number })[];
+    .all(userId, userId, userId) as unknown as (BoardRow & {
+    task_count: number;
+    member_count: number;
+    role: string;
+  })[];
   res.json(rows.map(publicBoard));
 });
 
@@ -171,16 +228,19 @@ const createBoardSchema = z.object({
 });
 
 router.post('/boards', (req, res) => {
+  const userId = currentUser(req);
   const input = parse(createBoardSchema, req.body);
-  if (input.key && boardByIdOrKey(input.key, currentUser(req))) {
+  if (input.key && boardByIdOrKey(input.key, userId)) {
     throw new HttpError(409, `Board key "${input.key.toUpperCase()}" is already taken`);
   }
-  const board = createBoardWithDefaults(input, currentUser(req));
+  const board = createBoardWithDefaults(input, userId);
+  emitBoards([userId]);
   res.status(201).json(publicBoard(board));
 });
 
 router.get('/boards/:boardId', (req, res) => {
-  const board = requireBoard(req.params.boardId, currentUser(req));
+  const userId = currentUser(req);
+  const board = requireBoard(req.params.boardId, userId);
   const columns = listColumns(board.id).map((col) => {
     const tasks = db
       .prepare(
@@ -190,7 +250,12 @@ router.get('/boards/:boardId', (req, res) => {
       .all(col.id) as unknown as (TaskRow & { comment_count: number })[];
     return { ...col, tasks: tasks.map(mapTask) };
   });
-  res.json({ ...publicBoard(board), columns });
+  res.json({
+    ...publicBoard(board),
+    role: boardRole(board.id, userId),
+    members: listBoardMembers(board.id),
+    columns,
+  });
 });
 
 const updateBoardSchema = z.object({
@@ -208,12 +273,61 @@ router.patch('/boards/:boardId', (req, res) => {
     now(),
     board.id,
   );
+  emitBoard(board.id);
+  emitBoards(userIdsForBoard(board.id));
   res.json(publicBoard(requireBoard(board.id, userId)));
 });
 
 router.delete('/boards/:boardId', (req, res) => {
-  const board = requireBoard(req.params.boardId, currentUser(req));
+  const userId = currentUser(req);
+  const board = requireBoard(req.params.boardId, userId);
+  if (board.user_id !== userId) throw new HttpError(403, 'Only the board owner can delete the board');
+  const audience = userIdsForBoard(board.id);
   db.prepare('DELETE FROM boards WHERE id = ?').run(board.id);
+  emitBoards(audience);
+  res.status(204).end();
+});
+
+// ---------------------------------------------------------------- members ---
+
+router.get('/boards/:boardId/members', (req, res) => {
+  const board = requireBoard(req.params.boardId, currentUser(req));
+  res.json(listBoardMembers(board.id));
+});
+
+const addMemberSchema = z.object({
+  email: z.string().trim().email().max(120),
+});
+
+router.post('/boards/:boardId/members', (req, res) => {
+  const userId = currentUser(req);
+  const board = requireBoard(req.params.boardId, userId);
+  if (board.user_id !== userId) throw new HttpError(403, 'Only the board owner can add members');
+  const input = parse(addMemberSchema, req.body);
+  const user = userByEmail(input.email);
+  if (!user) throw notFound('User');
+  if (user.id === board.user_id) throw new HttpError(409, 'That person already owns the board');
+  const existing = db
+    .prepare('SELECT 1 AS found FROM board_members WHERE board_id = ? AND user_id = ?')
+    .get(board.id, user.id);
+  if (existing) throw new HttpError(409, 'That person is already a member');
+  addBoardMember(board.id, user.id);
+  emitBoards([user.id]);
+  emitBoard(board.id);
+  res.status(201).json(listBoardMembers(board.id));
+});
+
+router.delete('/boards/:boardId/members/:userId', (req, res) => {
+  const userId = currentUser(req);
+  const board = requireBoard(req.params.boardId, userId);
+  const targetId = req.params.userId;
+  if (board.user_id !== userId && targetId !== userId) {
+    throw new HttpError(403, 'Only the board owner can remove other members');
+  }
+  if (targetId === board.user_id) throw new HttpError(400, 'The board owner cannot be removed');
+  if (!removeBoardMember(board.id, targetId)) throw notFound('Member');
+  emitBoards([targetId]);
+  emitBoard(board.id);
   res.status(204).end();
 });
 
@@ -233,6 +347,7 @@ router.post('/boards/:boardId/columns', (req, res) => {
   db.prepare(
     'INSERT INTO columns (id, board_id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(id, board.id, input.name, position, ts, ts);
+  emitBoard(board.id);
   res.status(201).json(columnById(id, currentUser(req)));
 });
 
@@ -252,6 +367,7 @@ router.patch('/columns/:id', (req, res) => {
     now(),
     column.id,
   );
+  emitBoard(column.board_id);
   res.json(columnById(column.id, userId));
 });
 
@@ -264,6 +380,7 @@ router.delete('/columns/:id', (req, res) => {
     throw new HttpError(400, 'A board needs at least one column');
   }
   db.prepare('DELETE FROM columns WHERE id = ?').run(column.id);
+  emitBoard(column.board_id);
   res.status(204).end();
 });
 
@@ -272,8 +389,8 @@ router.delete('/columns/:id', (req, res) => {
 router.get('/tasks', (req, res) => {
   const userId = currentUser(req);
   const { board, column, assignee, label, q } = req.query as Record<string, string | undefined>;
-  const clauses: string[] = ['b.user_id = ?'];
-  const params: string[] = [userId];
+  const clauses: string[] = [boardAccessSql('b')];
+  const params: string[] = [userId, userId];
 
   if (board) {
     const b = requireBoard(board, userId);
@@ -373,6 +490,7 @@ router.post('/tasks', (req, res) => {
     db.exec('ROLLBACK');
     throw err;
   }
+  emitBoard(board.id);
   res.status(201).json(taskWithCount(id));
 });
 
@@ -424,6 +542,7 @@ router.patch('/tasks/:taskId', (req, res) => {
     now(),
     task.id,
   );
+  emitBoard(task.board_id);
   res.json(taskWithCount(task.id));
 });
 
@@ -447,12 +566,14 @@ router.post('/tasks/:taskId/move', (req, res) => {
     now(),
     task.id,
   );
+  emitBoard(task.board_id);
   res.json(taskWithCount(task.id));
 });
 
 router.delete('/tasks/:taskId', (req, res) => {
   const task = requireTask(req.params.taskId, currentUser(req));
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
+  emitBoard(task.board_id);
   res.status(204).end();
 });
 
@@ -483,5 +604,6 @@ router.post('/tasks/:taskId/comments', (req, res) => {
     now(),
   );
   db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now(), task.id);
+  emitBoard(task.board_id);
   res.status(201).json(db.prepare('SELECT * FROM comments WHERE id = ?').get(id));
 });
