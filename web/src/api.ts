@@ -1,4 +1,4 @@
-import type { Board, BoardFull, Comment, Priority, Task } from './types';
+import type { Board, BoardFull, BoardMember, Comment, Priority, Task } from './types';
 
 const BASE = '/api';
 const TOKEN_KEY = 'kanban.token';
@@ -101,6 +101,15 @@ export const api = {
   createBoard: (input: { name: string; key?: string; description?: string }) =>
     request<Board>('POST', '/boards', input),
   deleteBoard: (idOrKey: string) => request<void>('DELETE', `/boards/${encodeURIComponent(idOrKey)}`),
+  listBoardMembers: (boardId: string) =>
+    request<BoardMember[]>('GET', `/boards/${encodeURIComponent(boardId)}/members`),
+  addBoardMember: (boardId: string, email: string) =>
+    request<BoardMember[]>('POST', `/boards/${encodeURIComponent(boardId)}/members`, { email }),
+  removeBoardMember: (boardId: string, userId: string) =>
+    request<void>(
+      'DELETE',
+      `/boards/${encodeURIComponent(boardId)}/members/${encodeURIComponent(userId)}`,
+    ),
   createColumn: (boardId: string, name: string) =>
     request<BoardFull>('POST', `/boards/${encodeURIComponent(boardId)}/columns`, { name }),
   deleteColumn: (id: string) => request<void>('DELETE', `/columns/${encodeURIComponent(id)}`),

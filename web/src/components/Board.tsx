@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -34,7 +34,7 @@ function TaskCardView({ task, dragging }: { task: Task; dragging?: boolean }) {
       </div>
       <p className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium break-words">{task.title}</p>
       {(task.labels.length > 0 || task.assignee || (task.comment_count ?? 0) > 0) && (
-        <div className="mt-2.5 flex items-center gap-1.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           {task.labels.slice(0, 3).map((label) => (
             <span key={label} className="chip">
               {label}
@@ -101,10 +101,10 @@ function ColumnView({
   return (
     <section
       aria-label={column.name}
-      className="flex w-72 shrink-0 flex-col rounded-2xl border border-line bg-panel/60"
+      className="flex min-w-0 flex-col rounded-2xl border border-line bg-panel/60"
     >
       <header className="group flex items-center gap-2 px-3.5 pt-3.5 pb-2">
-        <h2 className="font-mono text-[11px] font-semibold tracking-[0.14em] text-ink-soft uppercase">
+        <h2 className="min-w-0 truncate font-mono text-[11px] font-semibold tracking-[0.14em] text-ink-soft uppercase" title={column.name}>
           {column.name}
         </h2>
         <span className="rounded-full bg-ink/8 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-soft">
@@ -159,81 +159,17 @@ function ColumnView({
   );
 }
 
-function AddColumn({ onAdd }: { onAdd: (name: string) => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    setBusy(true);
-    try {
-      await onAdd(name.trim());
-      setName('');
-      setOpen(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-11 w-72 shrink-0 items-center justify-center gap-2 rounded-2xl border border-dashed border-line text-sm font-semibold text-ink-soft transition-colors hover:border-accent hover:text-accent"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Add column
-      </button>
-    );
-  }
-
-  return (
-    <form onSubmit={submit} className="flex w-72 shrink-0 flex-col gap-2 rounded-2xl border border-line bg-white p-3">
-      <label htmlFor="new-column-name" className="sr-only">
-        Column name
-      </label>
-      <input
-        id="new-column-name"
-        className="input"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Column name"
-        maxLength={40}
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
-        }}
-      />
-      <div className="flex justify-end gap-2">
-        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-        <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={!name.trim() || busy}>
-          Add column
-        </button>
-      </div>
-    </form>
-  );
-}
-
 export function BoardView({
   board,
   onOpenTask,
   onAddTask,
   onMoveTask,
-  onAddColumn,
   onDeleteColumn,
 }: {
   board: BoardFull;
   onOpenTask: (task: Task) => void;
   onAddTask: (columnId: string) => void;
   onMoveTask: (taskId: string, columnId: string, position: number) => void;
-  onAddColumn: (name: string) => Promise<void>;
   onDeleteColumn: (column: ColumnWithTasks) => void;
 }) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -286,7 +222,7 @@ export function BoardView({
       onDragEnd={onDragEnd}
       onDragCancel={() => setActiveTask(null)}
     >
-      <div className="flex h-full items-start gap-4 overflow-x-auto px-6 pt-2 pb-6">
+      <div className="grid h-full auto-cols-fr grid-flow-col content-start items-start gap-4 overflow-x-hidden overflow-y-auto px-6 pt-2 pb-6">
         {board.columns.map((column) => (
           <ColumnView
             key={column.id}
@@ -297,7 +233,6 @@ export function BoardView({
             canDelete={board.columns.length > 1}
           />
         ))}
-        <AddColumn onAdd={onAddColumn} />
       </div>
       <DragOverlay>{activeTask ? <TaskCardView task={activeTask} dragging /> : null}</DragOverlay>
     </DndContext>
@@ -306,9 +241,12 @@ export function BoardView({
 
 export function BoardSkeleton() {
   return (
-    <div className="flex h-full items-start gap-4 overflow-x-auto px-6 pt-2 pb-6" aria-label="Loading board">
+    <div
+      className="grid h-full auto-cols-fr grid-flow-col content-start items-start gap-4 overflow-hidden px-6 pt-2 pb-6"
+      aria-label="Loading board"
+    >
       {[0, 1, 2, 3].map((col) => (
-        <div key={col} className="flex w-72 shrink-0 flex-col gap-2 rounded-2xl border border-line bg-panel/60 p-3">
+        <div key={col} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-line bg-panel/60 p-3">
           <div className="skeleton h-3 w-24" />
           {[0, 1, 2].slice(0, col === 0 ? 3 : col).map((i) => (
             <div key={i} className="skeleton h-20" style={{ animationDelay: `${i * 90}ms` }} />

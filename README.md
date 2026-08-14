@@ -23,7 +23,10 @@ An open source, self-hosted kanban board — like a tiny Jira — built so that 
 ## Features
 
 - **Boards, columns, tasks** — multiple boards, customizable columns, Jira-style task keys (`MB-1`, `MB-2`, …)
+- **Shared boards** — invite anyone with an account by email (*Share* button); owners and members edit the same board, members can leave anytime
+- **Live updates** — the web app refreshes in real time over Server-Sent Events when collaborators *or agents* change anything
 - **Drag & drop** web UI with search, assignee filter, priorities, labels and comments
+- **Fluid layout** — columns share the full width evenly and shrink as you add more; no horizontal scrolling
 - **Agent-native**: MCP server with 11 tools; agents reference tasks by human keys (`move_task MB-3 → "In progress"`)
 - **Assign to anyone** — people (`ana`) or agents (`agent:claude`), with distinct avatars in the UI
 - **Zero external services** — SQLite storage via `node:sqlite` (no native modules, no database server)
@@ -58,7 +61,10 @@ Configuration via environment variables:
 ### Accounts and access control
 
 Everyone needs an account: sign up from the sign-in screen, and your boards, tasks and API
-tokens are private to you. Board keys are still unique server-wide. Session tokens last 30 days.
+tokens are private to you — unless you share a board: open *Share* in the top bar and invite
+people by email. Owners keep admin rights (invite, remove members, delete the board); members
+can edit everything and leave whenever they want. Board keys are still unique server-wide.
+Session tokens last 30 days.
 
 API access uses bearer tokens:
 
@@ -146,6 +152,9 @@ GET    /api/tokens                  POST /api/tokens { "name" } → kt_… shown
 POST   /api/tokens/:id/revoke
 GET    /api/boards                  POST /api/boards
 GET    /api/boards/:id              PATCH|DELETE /api/boards/:id
+GET    /api/boards/:id/members      POST /api/boards/:id/members { "email" }
+DELETE /api/boards/:id/members/:userId
+GET    /api/events                  SSE stream (accepts ?token= for EventSource)
 POST   /api/boards/:id/columns      PATCH|DELETE /api/columns/:id
 GET    /api/tasks?board=&column=&assignee=&label=&q=
 POST   /api/tasks                   GET|PATCH|DELETE /api/tasks/:idOrKey
@@ -155,7 +164,7 @@ GET    /api/tasks/:idOrKey/comments POST /api/tasks/:idOrKey/comments
 
 Except for `/api/health`, `/api/auth/register` and `/api/auth/login`, every endpoint requires
 `Authorization: Bearer <token>` — a session token for the web app or a `kt_…` API token for agents.
-All data is scoped to the authenticated account.
+All data is scoped to the authenticated account and the boards shared with it.
 
 Boards, tasks and columns can all be referenced by id **or** human key (`MB`, `MB-3`, `"In progress"`). Errors are JSON: `{ "error": "Task not found" }` with proper status codes.
 

@@ -30,6 +30,15 @@ export interface ColumnWithTasks extends Column {
   tasks: Task[];
 }
 
+export type BoardRole = 'owner' | 'member';
+
+export interface BoardMember {
+  user_id: string;
+  email: string;
+  role: BoardRole;
+  created_at: string;
+}
+
 export interface Board {
   id: string;
   key: string;
@@ -38,10 +47,13 @@ export interface Board {
   created_at: string;
   updated_at: string;
   task_count?: number;
+  member_count?: number;
+  role?: BoardRole;
 }
 
 export interface BoardFull extends Board {
   columns: ColumnWithTasks[];
+  members?: BoardMember[];
 }
 
 export interface Comment {

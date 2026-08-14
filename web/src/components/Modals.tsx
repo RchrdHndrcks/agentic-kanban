@@ -84,6 +84,76 @@ export function ConfirmDialog({
   );
 }
 
+export function NewColumnModal({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => inputRef.current?.focus(), []);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim()) {
+      setError('Give the column a name.');
+      return;
+    }
+    setError('');
+    setBusy(true);
+    try {
+      await onCreate(name.trim());
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the column.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} label="Add column">
+      <form onSubmit={submit} className="p-6" noValidate>
+        <h2 className="font-display text-lg font-semibold">Add column</h2>
+        <div className="mt-5">
+          <label htmlFor="column-name" className="label">
+            Name <span className="text-accent">*</span>
+          </label>
+          <input
+            id="column-name"
+            ref={inputRef}
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. In review"
+            maxLength={40}
+          />
+          <p className="mt-1.5 text-xs text-ink-soft">
+            The existing columns shrink to make room — the board never scrolls sideways.
+          </p>
+        </div>
+        {error && (
+          <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Adding…' : 'Add column'}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
 export function NewBoardModal({
   onClose,
   onCreate,
