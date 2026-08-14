@@ -98,7 +98,7 @@ export default function ShareBoardModal({
           </form>
         )}
         {error && (
-          <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="alert-error mt-3">
             {error}
           </p>
         )}

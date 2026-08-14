@@ -14,7 +14,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
       <span
         title={name}
         className={cx(
-          'inline-flex items-center justify-center rounded-full bg-ink text-white',
+          'inline-flex items-center justify-center rounded-full bg-action text-action-ink',
           size === 'sm' ? 'h-6 w-6' : 'h-7 w-7',
         )}
       >
@@ -66,7 +66,7 @@ function LabelsEditor({ labels, onChange }: { labels: string[]; onChange: (label
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-white px-2 py-1.5 transition-colors focus-within:border-accent">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1.5 transition-colors focus-within:border-accent">
       {labels.map((label) => (
         <span key={label} className="chip">
           {label}
@@ -253,7 +253,7 @@ export function TaskModal({
           <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
             <div className="flex items-center gap-2.5">
               {original ? (
-                <span className="rounded-md bg-ink px-2 py-1 font-mono text-xs font-semibold text-white">
+                <span className="rounded-md bg-action px-2 py-1 font-mono text-xs font-semibold text-action-ink">
                   {original.key}
                 </span>
               ) : (
@@ -261,7 +261,7 @@ export function TaskModal({
               )}
               <select
                 aria-label="Column"
-                className="cursor-pointer rounded-md border border-line bg-white px-2 py-1 text-xs font-medium text-ink-soft"
+                className="cursor-pointer rounded-md border border-line bg-panel px-2 py-1 text-xs font-medium text-ink-soft"
                 value={columnId}
                 onChange={(e) => setColumnId(e.target.value)}
               >
@@ -316,7 +316,7 @@ export function TaskModal({
                       onClick={() => setPriority(p.value)}
                       className={cx(
                         'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-all',
-                        priority === p.value ? 'bg-white text-ink shadow-sm' : 'text-ink-soft hover:text-ink',
+                        priority === p.value ? 'bg-panel text-ink shadow-sm' : 'text-ink-soft hover:text-ink',
                       )}
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.color }} />
@@ -434,7 +434,7 @@ export function TaskModal({
                 ) : (
                   <button
                     type="button"
-                    className="btn-ghost text-red-600 hover:bg-red-50 hover:text-red-700"
+                    className="btn-ghost danger-hover text-red-600 hover:bg-red-50 hover:text-red-700"
                     onClick={() => setConfirmingDelete(true)}
                   >
                     Delete task
