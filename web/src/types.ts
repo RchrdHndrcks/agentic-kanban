@@ -1,5 +1,7 @@
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
 
+export type SortKey = 'manual' | 'priority' | 'newest' | 'oldest' | 'title';
+
 export interface Task {
   id: string;
   board_id: string;
