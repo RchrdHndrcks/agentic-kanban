@@ -74,6 +74,10 @@ API access uses bearer tokens:
 
 ## Connect your agents (MCP)
 
+The fastest way to get the exact config for your client is the **Connect MCP** button in the
+web app's top bar: it creates an API token and shows a ready-to-paste `claude_desktop_config.json`
+and `opencode.json` with your token, API URL and author already filled in.
+
 Build once (`npm run build`), then point any MCP client at `mcp/dist/index.js`.
 
 **Claude Desktop** (`claude_desktop_config.json`):
@@ -86,7 +90,8 @@ Build once (`npm run build`), then point any MCP client at `mcp/dist/index.js`.
       "args": ["/absolute/path/to/agentic-kanban/mcp/dist/index.js"],
       "env": {
         "KANBAN_API_URL": "http://localhost:3001/api",
-        "KANBAN_AUTHOR": "agent:claude"
+        "KANBAN_AUTHOR": "agent:claude",
+        "KANBAN_AUTH_TOKEN": "kt_…"
       }
     }
   }
@@ -101,7 +106,11 @@ Build once (`npm run build`), then point any MCP client at `mcp/dist/index.js`.
     "kanban": {
       "type": "local",
       "command": ["node", "/absolute/path/to/agentic-kanban/mcp/dist/index.js"],
-      "environment": { "KANBAN_API_URL": "http://localhost:3001/api" }
+      "environment": {
+        "KANBAN_API_URL": "http://localhost:3001/api",
+        "KANBAN_AUTHOR": "agent:opencode",
+        "KANBAN_AUTH_TOKEN": "kt_…"
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, clearToken, getToken, onUnauthorized, type User } from './api';
 import ApiTokensModal from './components/ApiTokensModal';
+import McpSetupModal from './components/McpSetupModal';
 import { BoardSkeleton, BoardView } from './components/Board';
 import { ConfirmDialog, NewBoardModal, NewColumnModal } from './components/Modals';
 import ShareBoardModal from './components/ShareBoardModal';
@@ -45,6 +46,7 @@ export default function App() {
   const [newColumnOpen, setNewColumnOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [live, setLive] = useState(false);
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -421,6 +423,19 @@ export default function App() {
           )}
           <button
             type="button"
+            className="btn-primary"
+            onClick={() => setMcpOpen(true)}
+            title="Get the config to connect your agents (MCP)"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M9 18V6l10-2v12" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>
+            Connect MCP
+          </button>
+          <button
+            type="button"
             className="btn-ghost"
             onClick={() => setTokensOpen(true)}
             title="Create and manage API tokens for agents"
@@ -591,6 +606,7 @@ export default function App() {
         />
       )}
       {tokensOpen && <ApiTokensModal onClose={() => setTokensOpen(false)} />}
+      {mcpOpen && <McpSetupModal onClose={() => setMcpOpen(false)} />}
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
