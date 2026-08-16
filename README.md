@@ -25,7 +25,7 @@ An open source, self-hosted kanban board — like a tiny Jira — built so that 
 - **Boards, columns, tasks** — multiple boards, customizable columns, Jira-style task keys (`MB-1`, `MB-2`, …)
 - **Shared boards** — invite anyone with an account by email (*Share* button); owners and members edit the same board, members can leave anytime
 - **Live updates** — the web app refreshes in real time over Server-Sent Events when collaborators *or agents* change anything
-- **Drag & drop** web UI with search, assignee filter, priorities, labels and comments
+- **Drag & drop** web UI with search, assignee filter, sorting (manual, priority, recency, title), priorities, labels and comments
 - **Fluid layout** — columns share the full width evenly and shrink as you add more; no horizontal scrolling
 - **Agent-native**: MCP server with 11 tools; agents reference tasks by human keys (`move_task MB-3 → "In progress"`)
 - **Assign to anyone** — people (`ana`) or agents (`agent:claude`), with distinct avatars in the UI

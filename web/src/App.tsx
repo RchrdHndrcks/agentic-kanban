@@ -9,7 +9,7 @@ import { Avatar } from './components/TaskModal';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { useToast } from './components/Toasts';
 import Auth from './Auth';
-import type { Board, BoardFull, ColumnWithTasks, Task } from './types';
+import type { Board, BoardFull, ColumnWithTasks, SortKey, Task } from './types';
 import { useTheme } from './useTheme';
 
 function Logo() {
@@ -41,6 +41,7 @@ export default function App() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [search, setSearch] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [sort, setSort] = useState<SortKey>('manual');
   const [taskModal, setTaskModal] = useState<TaskModalState | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [newColumnOpen, setNewColumnOpen] = useState(false);
@@ -371,6 +372,19 @@ export default function App() {
               ))}
             </select>
           )}
+          <select
+            aria-label="Sort tasks"
+            className="input w-auto cursor-pointer"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            title="Sort tasks within each column"
+          >
+            <option value="manual">Sort: Manual</option>
+            <option value="priority">Sort: Priority</option>
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+            <option value="title">Sort: Title</option>
+          </select>
           <button
             type="button"
             className="btn-ghost"
@@ -508,6 +522,7 @@ export default function App() {
         ) : (
           <BoardView
             board={visibleBoard}
+            sort={sort}
             onOpenTask={(task) => setTaskModal({ kind: 'edit', task })}
             onAddTask={(columnId) => setTaskModal({ kind: 'create', columnId })}
             onMoveTask={moveTask}

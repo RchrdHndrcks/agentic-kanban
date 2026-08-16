@@ -12,11 +12,36 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { BoardFull, ColumnWithTasks, Task } from '../types';
+import type { BoardFull, ColumnWithTasks, Priority, SortKey, Task } from '../types';
 import { cx } from '../utils';
 import { Avatar, PriorityDot } from './TaskModal';
 
 const POSITION_GAP = 1024;
+
+const PRIORITY_RANK: Record<Priority, number> = { urgent: 3, high: 2, medium: 1, low: 0 };
+
+/** Return a copy of the tasks ordered by the chosen sort key (manual keeps position order). */
+export function sortTasks(tasks: Task[], sort: SortKey): Task[] {
+  if (sort === 'manual') return tasks;
+  const sorted = [...tasks];
+  switch (sort) {
+    case 'priority':
+      sorted.sort(
+        (a, b) => PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] || a.position - b.position,
+      );
+      break;
+    case 'newest':
+      sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      break;
+    case 'oldest':
+      sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      break;
+    case 'title':
+      sorted.sort((a, b) => a.title.localeCompare(b.title));
+      break;
+  }
+  return sorted;
+}
 
 function positionAt(tasks: Task[], index: number): number {
   if (tasks.length === 0) return POSITION_GAP;
@@ -161,12 +186,14 @@ function ColumnView({
 
 export function BoardView({
   board,
+  sort = 'manual',
   onOpenTask,
   onAddTask,
   onMoveTask,
   onDeleteColumn,
 }: {
   board: BoardFull;
+  sort?: SortKey;
   onOpenTask: (task: Task) => void;
   onAddTask: (columnId: string) => void;
   onMoveTask: (taskId: string, columnId: string, position: number) => void;
@@ -175,13 +202,18 @@ export function BoardView({
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  const columns = useMemo(
+    () => board.columns.map((column) => ({ ...column, tasks: sortTasks(column.tasks, sort) })),
+    [board, sort],
+  );
+
   const taskIndex = useMemo(() => {
     const map = new Map<string, { column: ColumnWithTasks; index: number }>();
-    for (const column of board.columns) {
+    for (const column of columns) {
       column.tasks.forEach((task, index) => map.set(task.id, { column, index }));
     }
     return map;
-  }, [board]);
+  }, [columns]);
 
   const onDragStart = (event: DragStartEvent) => {
     const hit = taskIndex.get(String(event.active.id));
@@ -200,7 +232,7 @@ export function BoardView({
     if (!source) return;
     const task = source.column.tasks[source.index]!;
 
-    const overColumn = board.columns.find((c) => c.id === overId);
+    const overColumn = columns.find((c) => c.id === overId);
     const overTask = taskIndex.get(overId);
     const targetColumn = overColumn ?? overTask?.column;
     if (!targetColumn) return;
@@ -223,14 +255,14 @@ export function BoardView({
       onDragCancel={() => setActiveTask(null)}
     >
       <div className="grid h-full auto-cols-fr grid-flow-col content-start items-start gap-4 overflow-x-hidden overflow-y-auto px-6 pt-2 pb-6">
-        {board.columns.map((column) => (
+        {columns.map((column) => (
           <ColumnView
             key={column.id}
             column={column}
             onOpenTask={onOpenTask}
             onAddTask={onAddTask}
             onDeleteColumn={onDeleteColumn}
-            canDelete={board.columns.length > 1}
+            canDelete={columns.length > 1}
           />
         ))}
       </div>
