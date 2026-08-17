@@ -268,7 +268,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-paper/85 px-6 py-3 backdrop-blur">
+      <header className="flex items-center gap-3 border-b border-line bg-paper/85 px-6 py-3 backdrop-blur">
         <Logo />
         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
         {boards && boards.length > 0 && (
@@ -387,19 +387,19 @@ export default function App() {
           </select>
           <button
             type="button"
-            className="btn-ghost"
+            className="btn-nav btn-ghost"
             onClick={() => setNewBoardOpen(true)}
             title="New board"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
               <path d="M12 5v14M5 12h14" />
             </svg>
-            Board
+            <span className="nav-label">Board</span>
           </button>
           {visibleBoard && (
             <button
               type="button"
-              className="btn-ghost"
+              className="btn-nav btn-ghost"
               onClick={() => setShareOpen(true)}
               title="Share this board with other people"
             >
@@ -408,7 +408,7 @@ export default function App() {
                 <circle cx="9" cy="7" r="4" />
                 <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
-              Share
+              <span className="nav-label">Share</span>
             </button>
           )}
           {currentBoardMeta && currentBoardMeta.role !== 'member' && (
@@ -437,7 +437,7 @@ export default function App() {
           )}
           <button
             type="button"
-            className="btn-primary"
+            className="btn-nav btn-primary"
             onClick={() => setMcpOpen(true)}
             title="Get the config to connect your agents (MCP)"
           >
@@ -446,11 +446,11 @@ export default function App() {
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
             </svg>
-            Connect MCP
+            <span className="nav-label">Connect MCP</span>
           </button>
           <button
             type="button"
-            className="btn-ghost"
+            className="btn-nav btn-ghost"
             onClick={() => setTokensOpen(true)}
             title="Create and manage API tokens for agents"
           >
@@ -458,11 +458,11 @@ export default function App() {
               <circle cx="7.5" cy="15.5" r="4.5" />
               <path d="m10.7 12.3 8.8-8.8M16 5l3 3M19 8l2.5 2.5M14 10.5l1.5 1.5" />
             </svg>
-            API tokens
+            <span className="nav-label">API tokens</span>
           </button>
           <button
             type="button"
-            className="btn-ghost"
+            className="btn-nav btn-ghost"
             disabled={!visibleBoard}
             onClick={() => setNewColumnOpen(true)}
             title="Add a column — existing ones shrink to make room"
@@ -472,11 +472,11 @@ export default function App() {
               <rect x="10" y="4" width="5" height="16" rx="1.5" />
               <path d="M18.5 9v6M15.5 12h6" />
             </svg>
-            Column
+            <span className="nav-label">Column</span>
           </button>
           <button
             type="button"
-            className="btn-primary"
+            className="btn-nav btn-primary"
             disabled={!visibleBoard || visibleBoard.columns.length === 0}
             onClick={() => {
               const first = visibleBoard?.columns[0];
@@ -486,7 +486,7 @@ export default function App() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
               <path d="M12 5v14M5 12h14" />
             </svg>
-            New task
+            <span className="nav-label">New task</span>
           </button>
         </div>
       </header>
