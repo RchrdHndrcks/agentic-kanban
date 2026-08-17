@@ -107,6 +107,31 @@
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-ink/5 hover:text-ink disabled:pointer-events-none disabled:opacity-50;
   }
 
+  .btn-nav {
+    @apply inline-flex items-center justify-center rounded-lg px-2 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200;
+    max-width: 2.5rem;
+    gap: 0.25rem;
+    overflow: hidden;
+  }
+
+  .btn-nav:hover,
+  .btn-nav:focus-visible {
+    max-width: 12rem;
+    gap: 0.5rem;
+  }
+
+  .btn-nav .nav-label {
+    @apply overflow-hidden whitespace-nowrap transition-all duration-200;
+    max-width: 0;
+    opacity: 0;
+  }
+
+  .btn-nav:hover .nav-label,
+  .btn-nav:focus-visible .nav-label {
+    max-width: 10rem;
+    opacity: 1;
+  }
+
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
